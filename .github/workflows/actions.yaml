@@ -1,0 +1,24 @@
+name: GitHub Actions pipeline for Kanister WordPress demo
+on:
+  push:
+    branches:
+    - main
+jobs:
+  opentofu:
+    runs-on: ubuntu-latest
+    steps:
+    - name: OpenTofu - Setup Tofu
+      uses: opentofu/setup-opentofu@v1
+      with:
+        tofu_version: ^1.7.2
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Initialize OpenTofu without backend
+      run: |
+        tofu init -backend=false
+    - name: Check OpenTofu formatting
+      run: |
+        tofu fmt -recursive -check
+    - name: Validate OpenTofu configuration
+      run: |
+        tofu validate

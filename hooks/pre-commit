@@ -1,0 +1,8 @@
+#!/bin/bash -e
+
+if ! tofu fmt -recursive -check; then
+    tofu fmt -recursive
+    echo "Formatting issues detected and fixed, please stage the new changes" 2>&1
+    echo "Your changes were NOT committed!" 2>&1
+    exit 1
+fi
