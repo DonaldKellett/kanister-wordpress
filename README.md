@@ -4,7 +4,21 @@ Back up and restore WordPress on Kubernetes with Kanister
 
 ## Overview
 
-TODO
+[Kubernetes CSI](https://kubernetes-csi.github.io/docs/) enables us to take volume snapshots on supported storage backends as a first step towards protecting our data on Kubernetes but snapshots operate at the infrastructure level so they do not understand how applications operate and manage their data. This implies that snapshots, by nature, are crash-consistent but not application-consistent. For busy stateful workloads such as databases processing many transactions per second, crash-consistency is insufficient for data protection since in-progress transactions are not recorded so restoring from a snapshot may still lead to data loss and leave the application in a broken state.
+
+[Kanister](https://kanister.io/) provides a robust and flexible solution for defining your own actions for performing application-aware backups on Kubernetes. It does this by defining blueprints, which serve as templates for application-specific backup and restore actions. The backup administrator or application owner may then instantiate actions defined in these blueprints by creating ActionSets which perform the actual application-specific backup and recovery tasks.
+
+This demo demonstrates how to back up and restore WordPress on Kubernetes with Kanister in a reliable manner, by creating a logical database backup \(database dump\) and exporting it to S3 which can be imported during the restore phase to return WordPress to a known good state. The backup procedure consists of the following 3 steps:
+
+1. Scale the WordPress deployment to zero to stop accepting user traffic and complete pending database transactions
+1. Take a logical dump of the database and upload it to S3
+1. Scale the WordPress deployment back to the original count to start accepting user traffic again
+
+The restore procedure is also similar:
+
+1. Scale the WordPress deployment to zero to stop accepting user traffic and ensure no additional database transactions are made during the restore operation
+1. Download the logical database dump from S3 and import it to our running database
+1. Scale the WordPress deployment back to the original count to start accepting user traffic again
 
 ## Developing
 
@@ -107,7 +121,38 @@ kanctl -n kanister create actionset \
 
 ### Restore our WordPress database from S3
 
-TODO
+As with backing our our WordPress database to S3, we should quiesce our WordPress application as well prior to restoring from our database dump:
+
+```bash
+kanctl -n kanister create actionset \
+    --action quiesce \
+    --blueprint wordpress-bp \
+    --deployment wordpress/wordpress
+```
+
+Sample output:
+
+```text
+actionset quiesce-2jtgj created
+```
+
+Now run the `restore` action to restore our WordPress database from the SQL dump uploaded to S3:
+
+```bash
+BACKUP_ACTIONSET="backup-pzxzz" # Replace me!
+kanctl -n kanister create actionset \
+    --action restore \
+    --from "${BACKUP_ACTIONSET}"
+```
+
+Once the restore operation is complete, unquiesce our WordPress application so it can start accepting user traffic again:
+
+```bash
+QUIESCE_ACTIONSET="quiesce-2jtgj" # Replace me!
+kanctl -n kanister create actionset \
+    --action unquiesce \
+    --from "${QUIESCE_ACTIONSET}"
+```
 
 ## License
 

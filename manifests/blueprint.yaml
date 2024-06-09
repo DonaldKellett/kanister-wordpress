@@ -64,3 +64,28 @@ actions:
             dump_cmd="mysqldump -u root --password=${root_password} -h {{ .StatefulSet.Name }} --column-statistics=0 --single-transaction --databases ${dump_databases}"
             ${dump_cmd} | kando location push --profile '{{ toJson .Profile }}' --path "${backup_file_path}" -
             kando output backupFilePath "${backup_file_path}"
+  restore:
+    inputArtifactNames:
+    - mariaBackup
+    phases:
+    - func: KubeTask
+      name: restore
+      objects:
+        mariaSecret:
+          kind: Secret
+          name: '{{ .StatefulSet.Name }}'
+          namespace: '{{ .StatefulSet.Namespace }}'
+      args:
+        image: ghcr.io/kanisterio/mysql-sidecar:0.109.0
+        namespace: "{{ .StatefulSet.Namespace }}"
+        command:
+        - bash
+        - -o
+        - errexit
+        - -o
+        - pipefail
+        - -c
+        - |
+          backup_file_path="{{ .ArtifactsIn.mariaBackup.KeyValue.backupFilePath }}"
+          root_password="{{ index .Phases.restore.Secrets.mariaSecret.Data "mariadb-root-password" | toString }}"
+          kando location pull --profile '{{ toJson .Profile }}' --path "${backup_file_path}" - | mysql -u root --password=${root_password} -h {{ .StatefulSet.Name }}
