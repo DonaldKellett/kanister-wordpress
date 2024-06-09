@@ -1,0 +1,31 @@
+---
+apiVersion: cr.kanister.io/v1alpha1
+kind: Blueprint
+metadata:
+  name: wordpress-bp
+  namespace: kanister
+actions:
+  quiesce-and-backup:
+    outputArtifacts:
+      mariaBackup:
+        keyValue:
+          origReplicas: "{{ .Phases.quiesce.Output.originalReplicaCount }}"
+    phases:
+    - func: ScaleWorkload
+      name: quiesce
+      args:
+        namespace: "{{ .StatefulSet.Namespace }}"
+        name: "{{ .StatefulSet.Name }}"
+        kind: StatefulSet
+        replicas: 0
+  unquiesce:
+    inputArtifactNames:
+    - mariaBackup
+    phases:
+    - func: ScaleWorkload
+      name: unquiesce
+      args:
+        namespace: "{{ .StatefulSet.Namespace }}"
+        name: "{{ .StatefulSet.Name }}"
+        kind: StatefulSet
+        replicas: "{{ .ArtifactsIn.mariaBackup.KeyValue.origReplicas }}"
