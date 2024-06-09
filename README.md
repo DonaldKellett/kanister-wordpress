@@ -58,31 +58,51 @@ First create the blueprint:
 kubectl create -f manifests/blueprint.yaml
 ```
 
-Now run the `quiesce-and-backup` action with `kanctl` which performs the following operations:
+Create a location profile and corresponding secret as well to point to our S3 bucket where we'll store our database dumps to.
 
-1. Quiesce the WordPress database by scaling it to zero
-1. Upload a logical dump of the database to S3
+```bash
+kubectl create -f manifests/secret.yaml
+kubectl create -f manifests/profile.yaml
+```
+
+Now run the `quiesce` action with `kanctl` which scales down our WordPress deployment to zero. This ensures that we are not writing to the database when the backup occurs at a later stage.
 
 ```bash
 kanctl -n kanister create actionset \
-    --action quiesce-and-backup \
+    --action quiesce \
     --blueprint wordpress-bp \
+    --deployment wordpress/wordpress
+```
+
+Sample output:
+
+```text
+actionset quiesce-spx9q created
+```
+
+Now we can run the `backup` action to backup up our WordPress database:
+
+```bash
+kanctl -n kanister create actionset \
+    --action backup \
+    --blueprint wordpress-bp \
+    --profile wordpress-s3-profile \
     --statefulset wordpress/wordpress-mariadb
 ```
 
 Sample output:
 
 ```text
-actionset quiesce-and-backup-rbcj6 created
+actionset backup-pzxzz created
 ```
 
-The original replica count is saved as an output artifact which can be used by the `unquiesce` action once the previous action is complete:
+Once the backup is complete, run the `unquiesce` action which scales our WordPress deployment back to the original number of replicas so it can start accepting user traffic again.
 
 ```bash
-PARENT_ACTION="quiesce-and-backup-rbcj6" # Replace me!
+QUIESCE_ACTIONSET="quiesce-spx9q" # Replace me!
 kanctl -n kanister create actionset \
     --action unquiesce \
-    --from "${PARENT_ACTION}"
+    --from "${QUIESCE_ACTIONSET}"
 ```
 
 ### Restore our WordPress database from S3

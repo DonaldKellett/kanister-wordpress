@@ -5,7 +5,7 @@ metadata:
   name: wordpress-bp
   namespace: kanister
 actions:
-  quiesce-and-backup:
+  quiesce:
     outputArtifacts:
       mariaBackup:
         keyValue:
@@ -14,9 +14,9 @@ actions:
     - func: ScaleWorkload
       name: quiesce
       args:
-        namespace: "{{ .StatefulSet.Namespace }}"
-        name: "{{ .StatefulSet.Name }}"
-        kind: StatefulSet
+        name: "{{ .Deployment.Name }}"
+        namespace: "{{ .Deployment.Namespace }}"
+        kind: Deployment
         replicas: 0
   unquiesce:
     inputArtifactNames:
@@ -25,7 +25,42 @@ actions:
     - func: ScaleWorkload
       name: unquiesce
       args:
-        namespace: "{{ .StatefulSet.Namespace }}"
-        name: "{{ .StatefulSet.Name }}"
-        kind: StatefulSet
+        namespace: "{{ .Deployment.Namespace }}"
+        name: "{{ .Deployment.Name }}"
+        kind: Deployment
         replicas: "{{ .ArtifactsIn.mariaBackup.KeyValue.origReplicas }}"
+  backup:
+    outputArtifacts:
+      mariaBackup:
+        keyValue:
+          backupFilePath: "{{ .Phases.backup.Output.backupFilePath }}"
+    phases:
+    - func: KubeTask
+      name: backup
+      objects:
+        mariaSecret:
+          kind: Secret
+          name: '{{ .StatefulSet.Name }}'
+          namespace: '{{ .StatefulSet.Namespace }}'
+      args:
+        image: ghcr.io/kanisterio/mysql-sidecar:0.109.0
+        namespace: "{{ .StatefulSet.Namespace }}"
+        command:
+        - bash
+        - -o
+        - errexit
+        - -o
+        - pipefail
+        - -c
+        - |
+            backup_file_path={{ (printf "%s/%s.sql" "wordpress-mariadb" (toDate "2006-01-02T15:04:05.999999999Z07:00" .Time | date "2006-01-02")) | quote }}
+            root_password="{{ index .Phases.backup.Secrets.mariaSecret.Data "mariadb-root-password" | toString }}"
+            exclude_db="('information_schema', 'mysql', 'performance_schema')"
+            dump_databases=""
+            for db in `mysql -u root -h {{ .StatefulSet.Name }} --password=${root_password} -ANe "use information_schema; select schema_name from schemata where schema_name not in ${exclude_db}"`
+            do
+                    dump_databases="${dump_databases} ${db}"
+            done
+            dump_cmd="mysqldump -u root --password=${root_password} -h {{ .StatefulSet.Name }} --column-statistics=0 --single-transaction --databases ${dump_databases}"
+            ${dump_cmd} | kando location push --profile '{{ toJson .Profile }}' --path "${backup_file_path}" -
+            kando output backupFilePath "${backup_file_path}"
